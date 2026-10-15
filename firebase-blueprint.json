@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "SomitiDatabase": {
+      "title": "Somiti Database Bundle",
+      "description": "Central Somiti operational database including members, transactions, loans, projects, tasks, and cashbook",
+      "type": "object",
+      "properties": {
+        "members": {
+          "type": "array",
+          "description": "List of registered somiti members with profile and authentication info"
+        },
+        "transactions": {
+          "type": "array",
+          "description": "List of kisti collection and savings deposit transactions"
+        },
+        "loans": {
+          "type": "array",
+          "description": "List of member loans and repayments"
+        },
+        "projects": {
+          "type": "array",
+          "description": "List of organization ventures and projects"
+        },
+        "projectExpenses": {
+          "type": "array",
+          "description": "List of expenses incurred for projects"
+        },
+        "tasks": {
+          "type": "array",
+          "description": "List of organization tasks and checklist items"
+        },
+        "cashbook": {
+          "type": "array",
+          "description": "Organization cash in hand ledger entries"
+        },
+        "version": {
+          "type": "number",
+          "description": "Monotonically increasing revision counter"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of last modification"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Name or user ID of person who triggered the save"
+        }
+      },
+      "required": ["members", "transactions", "loans", "projects", "version", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/somiti_data/{docId}": {
+      "schema": "SomitiDatabase",
+      "description": "Somiti central documents store holding the central_database document"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Friend Initiative Organization",
+  "description": "Comprehensive cooperative society management platform for tracking member savings kisti, loans, project investments, and committee task workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
