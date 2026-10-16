@@ -41,10 +41,12 @@ import {
   ChevronRight,
   Info,
   Percent,
+  Scale,
 } from 'lucide-react';
 import { useSomiti } from '../context/SomitiContext';
 import { KistiTransaction, Language, isAdminRole } from '../types/somiti';
 import { formatCurrency, formatDate, toBengaliNumber } from '../utils/formatters';
+import { calculateSomitiMetrics, calculateMemberEquity } from '../utils/financialCalculations';
 import { MemberAvatar } from './MemberAvatar';
 import { PhotoCropModal } from './PhotoCropModal';
 import { DateInput } from './DateInput';
@@ -116,16 +118,21 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
     if (activePortalSubTab === 'rules' && !isRulesEnabled) setActivePortalSubTab(null);
   }, [activePortalSubTab, isProfileEnabled, isPassbookEnabled, isDashboardEnabled, isLoanEnabled, isInvestmentEnabled, isStatementEnabled, isRulesEnabled]);
 
-  // Somiti Global Financial Metrics
-  const totalMemberSavings = members.reduce((sum, m) => sum + (m.totalSavingsDeposited || 0), 0);
-  const marchTxs = transactions.filter(t => (t.periodMonth === '2026-03' || t.date.startsWith('2026-03')) && t.type === 'savings');
-  const marchCollection = marchTxs.reduce((sum, t) => sum + t.amount, 0);
-  const activeLoansList = loans.filter(l => l.status === 'active');
-  const activeLoansDues = activeLoansList.reduce((sum, l) => sum + l.remainingAmount, 0);
-  const totalDisbursed = activeLoansList.reduce((sum, l) => sum + l.principalAmount, 0);
-  const totalInflow = cashbook.filter(e => e.type === 'inflow').reduce((sum, e) => sum + e.amount, 0);
-  const totalOutflow = cashbook.filter(e => e.type === 'outflow').reduce((sum, e) => sum + e.amount, 0);
-  const cashInHand = Math.max(0, totalInflow - totalOutflow);
+  // Somiti Global Financial Metrics & Valuation Model
+  const somitiMetrics = calculateSomitiMetrics({
+    members,
+    transactions,
+    loans,
+    projects,
+    cashbook,
+  });
+  const myEquity = currentMember ? calculateMemberEquity(currentMember, somitiMetrics) : null;
+
+  const totalMemberSavings = somitiMetrics.totalMemberSavings;
+  const activeLoansList = loans.filter((l) => l.status === 'active');
+  const activeLoansDues = somitiMetrics.totalOutstandingLoanDues;
+  const totalDisbursed = somitiMetrics.totalActiveLoansDisbursed;
+  const cashInHand = somitiMetrics.cashInHand;
 
   // Profile Edit State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -505,11 +512,59 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl shadow-2xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span>{language === 'bn' ? 'সক্রিয় সদস্য' : 'Active Member'}</span>
               </span>
+            </div>
+          </div>
+
+          {/* Member Personal Equity & Share Live Valuation Summary Strip */}
+          <div className="bg-gradient-to-br from-emerald-900 to-teal-900 text-white rounded-2xl p-4 sm:p-5 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">
+                  {language === 'bn' ? 'আমার ব্যক্তিগত আর্থিক মূল্যায়ন (My Share Equity)' : 'My Equity & Share Valuation'}
+                </div>
+                <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-white mt-1">
+                  {formatCurrency(myEquity?.totalEquityValue || 0, language)}
+                </div>
+                <div className="text-xs text-emerald-200/90 mt-0.5">
+                  {language === 'bn'
+                    ? `শেয়ার: ${toBengaliNumber(somitiMetrics.sharesPerMember)} টি · প্রতি শেয়ারের মূল্য: ${formatCurrency(somitiMetrics.faceValuePerShare, language)}`
+                    : `Shares: ${somitiMetrics.sharesPerMember} · Per Share: ${formatCurrency(somitiMetrics.faceValuePerShare, language)}`}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 shrink-0">
+                <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/15">
+                  <div className="text-[10px] text-emerald-200 uppercase font-medium">
+                    {language === 'bn' ? 'আমার জমা সঞ্চয়' : 'My Savings'}
+                  </div>
+                  <div className="text-base font-bold font-mono text-white mt-0.5">
+                    {formatCurrency(currentMember.totalSavingsDeposited, language)}
+                  </div>
+                </div>
+
+                <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/15">
+                  <div className="text-[10px] text-emerald-200 uppercase font-medium">
+                    {language === 'bn' ? 'প্রাপ্য লাভ অংশ' : 'Profit Share'}
+                  </div>
+                  <div className="text-base font-bold font-mono text-teal-200 mt-0.5">
+                    +{formatCurrency(myEquity?.profitAndSurplusShare || 0, language)}
+                  </div>
+                </div>
+
+                <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/15 col-span-2 sm:col-span-1">
+                  <div className="text-[10px] text-emerald-200 uppercase font-medium">
+                    {language === 'bn' ? 'সমিতির মোট সম্পদ' : 'Total Asset'}
+                  </div>
+                  <div className="text-base font-bold font-mono text-emerald-100 mt-0.5">
+                    {formatCurrency(somitiMetrics.totalAssets, language)}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -982,7 +1037,7 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
               </button>
             </div>
 
-            {/* 4 Financial Stat Cards for Passbook */}
+            {/* Financial Stat Cards for Passbook */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
               <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/80">
                 <div className="text-[11px] font-medium text-emerald-800 uppercase tracking-wide">
@@ -991,14 +1046,8 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                 <div className="text-xl font-bold font-mono tabular-nums text-emerald-800 mt-1">
                   {formatCurrency(currentMember.totalSavingsDeposited, language)}
                 </div>
-              </div>
-
-              <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
-                <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
-                  {language === 'bn' ? 'মাসিক ধার্য কিস্তি' : 'Monthly Savings Kisti'}
-                </div>
-                <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
-                  {formatCurrency(currentMember.monthlySavingsCommitment, language)}
+                <div className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                  {language === 'bn' ? 'ব্যক্তিগত সঞ্চয় আমানত' : 'Principal Deposit'}
                 </div>
               </div>
 
@@ -1007,16 +1056,34 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                   {language === 'bn' ? 'মালিকানাধীন শেয়ার' : 'Owned Shares'}
                 </div>
                 <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
-                  {language === 'bn' ? `${toBengaliNumber(currentMember.shareCount)} টি` : `${currentMember.shareCount} Shares`}
+                  {toBengaliNumber(somitiMetrics.sharesPerMember)} {language === 'bn' ? 'টি' : 'Shares'}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-0.5">
+                  {language === 'bn' ? '১০০ শেয়ার সমান বণ্টন' : '100 Shares Split'}
                 </div>
               </div>
 
-              <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80">
-                <div className="text-[11px] font-medium text-blue-800 uppercase tracking-wide">
-                  {language === 'bn' ? 'শেয়ারের মোট মূল্য' : 'Total Share Value'}
+              <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
+                  {language === 'bn' ? 'প্রতি শেয়ার ফেস ভ্যালু' : 'Face Value / Share'}
                 </div>
-                <div className="text-xl font-bold font-mono tabular-nums text-blue-800 mt-1">
-                  {formatCurrency(currentMember.shareCount * currentMember.shareFaceValue, language)}
+                <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
+                  {formatCurrency(somitiMetrics.faceValuePerShare, language)}
+                </div>
+                <div className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                  {language === 'bn' ? 'মোট সম্পদ ÷ ১০০' : 'Total Asset ÷ 100'}
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-emerald-950/90 rounded-xl border border-emerald-800 text-white">
+                <div className="text-[11px] font-bold text-emerald-300 uppercase tracking-wide">
+                  {language === 'bn' ? 'ব্যক্তিগত সম্পত্তির মূল্য' : 'Member Equity Valuation'}
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums text-emerald-100 mt-1">
+                  {formatCurrency(myEquity?.totalEquityValue || 0, language)}
+                </div>
+                <div className="text-[10px] text-emerald-300 mt-0.5">
+                  {language === 'bn' ? 'শেয়ার × প্রতি শেয়ার মূল্য' : 'Shares × Face Value'}
                 </div>
               </div>
             </div>
@@ -1166,8 +1233,8 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
               </span>
             </div>
 
-            {/* 4 Financial Stat Cards for this Member */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+            {/* 5 Financial Stat Cards for this Member */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6">
               <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/80">
                 <div className="text-[11px] font-medium text-emerald-800 uppercase tracking-wide">
                   {language === 'bn' ? 'আমার মোট জমা সঞ্চয়' : 'Total Savings Deposited'}
@@ -1175,14 +1242,8 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                 <div className="text-xl font-bold font-mono tabular-nums text-emerald-800 mt-1">
                   {formatCurrency(currentMember.totalSavingsDeposited, language)}
                 </div>
-              </div>
-
-              <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
-                <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
-                  {language === 'bn' ? 'মাসিক ধার্য কিস্তি' : 'Monthly Savings Kisti'}
-                </div>
-                <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
-                  {formatCurrency(currentMember.monthlySavingsCommitment, language)}
+                <div className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                  {language === 'bn' ? 'মূল সঞ্চয় আমানত' : 'Principal Deposit'}
                 </div>
               </div>
 
@@ -1191,17 +1252,65 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                   {language === 'bn' ? 'মালিকানাধীন শেয়ার' : 'Owned Shares'}
                 </div>
                 <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
-                  {language === 'bn' ? `${toBengaliNumber(currentMember.shareCount)} টি` : `${currentMember.shareCount} Shares`}
+                  {toBengaliNumber(somitiMetrics.sharesPerMember)} {language === 'bn' ? 'টি' : 'Shares'}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-0.5">
+                  {language === 'bn' ? '১০০ শেয়ার সমান বণ্টন' : '100 Shares Split'}
                 </div>
               </div>
 
-              <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80">
-                <div className="text-[11px] font-medium text-blue-800 uppercase tracking-wide">
-                  {language === 'bn' ? 'শেয়ারের মোট মূল্য' : 'Total Share Value'}
+              <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
+                  {language === 'bn' ? 'প্রতি শেয়ার ফেস ভ্যালু' : 'Face Value / Share'}
                 </div>
-                <div className="text-xl font-bold font-mono tabular-nums text-blue-800 mt-1">
-                  {formatCurrency(currentMember.shareCount * currentMember.shareFaceValue, language)}
+                <div className="text-xl font-bold font-mono tabular-nums text-neutral-900 mt-1">
+                  {formatCurrency(somitiMetrics.faceValuePerShare, language)}
                 </div>
+                <div className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                  {language === 'bn' ? 'মোট সম্পদ ÷ ১০০' : 'Total Asset ÷ 100'}
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-emerald-950/90 rounded-xl border border-emerald-800 text-white">
+                <div className="text-[11px] font-bold text-emerald-300 uppercase tracking-wide">
+                  {language === 'bn' ? 'ব্যক্তিগত সম্পত্তির মূল্য' : 'Member Equity Valuation'}
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums text-emerald-100 mt-1">
+                  {formatCurrency(myEquity?.totalEquityValue || 0, language)}
+                </div>
+                <div className="text-[10px] text-emerald-300 mt-0.5">
+                  {language === 'bn' ? 'শেয়ার × প্রতি শেয়ার মূল্য' : 'Shares × Face Value'}
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-teal-50/60 rounded-xl border border-teal-200/80 col-span-2 sm:col-span-1">
+                <div className="text-[11px] font-medium text-teal-800 uppercase tracking-wide">
+                  {language === 'bn' ? 'প্রাপ্য লাভ ও সারপ্লাস' : 'Profit & Surplus Share'}
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums text-teal-900 mt-1">
+                  +{formatCurrency(myEquity?.profitAndSurplusShare || 0, language)}
+                </div>
+                <div className="text-[10px] text-teal-700 mt-0.5 font-medium">
+                  {language === 'bn' ? 'মুনাফা ও জরিমানা হতে' : 'From Profit & Fees'}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Valuation Explanation Strip */}
+            <div className="mt-4 p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 text-xs text-neutral-600 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Scale className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="font-semibold text-neutral-800">
+                  {language === 'bn' ? 'সমিতির মোট সম্পত্তি (Valuation):' : 'Somiti Total Valuation:'}
+                </span>
+                <span className="font-mono font-bold text-emerald-800">
+                  {formatCurrency(somitiMetrics.totalAssets, language)}
+                </span>
+              </div>
+              <div className="text-[11px] text-neutral-500">
+                {language === 'bn'
+                  ? `মোট সঞ্চয় (${formatCurrency(somitiMetrics.totalMemberSavings, language)}) + বিনিয়োগ লাভ (${formatCurrency(somitiMetrics.totalInvestmentProfits, language)}) + লেট ফি (${formatCurrency(somitiMetrics.totalLateFees, language)})`
+                  : `Savings (${formatCurrency(somitiMetrics.totalMemberSavings, language)}) + Profit (${formatCurrency(somitiMetrics.totalInvestmentProfits, language)}) + Late Fees (${formatCurrency(somitiMetrics.totalLateFees, language)})`}
               </div>
             </div>
           </div>

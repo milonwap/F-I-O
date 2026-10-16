@@ -28,12 +28,45 @@ export const CollectKistiModal: React.FC<CollectKistiModalProps> = ({
   const [selectedMemberId, setSelectedMemberId] = useState<string>(initialMemberId || '');
   const [kistiType, setKistiType] = useState<KistiType>(initialType);
   
-  // Clean, isolated date inputs to allow complete backdated entry (e.g. 10/10/2024) without auto-reset
-  const [dateDay, setDateDay] = useState<string>('');
-  const [dateMonth, setDateMonth] = useState<string>('');
-  const [dateYear, setDateYear] = useState<string>('');
-  const [periodMonth, setPeriodMonth] = useState<string>('');
-  
+  // আজকের তারিখ পাওয়ার হেল্পার (YYYY-MM-DD ফরম্যাট)
+  const getTodayDateString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // স্টেটসমূহ
+  const [paymentDate, setPaymentDate] = useState<string>(getTodayDateString());
+  const [targetMonth, setTargetMonth] = useState<string>(() => {
+    if (initialPeriodMonth) return initialPeriodMonth;
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // ডেট পরিবর্তন হলে অটো টার্গেট মান্থ সেট করার হ্যান্ডলার
+  const handleDateChange = (newDate: string) => {
+    setPaymentDate(newDate);
+
+    if (newDate) {
+      const d = new Date(newDate);
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        
+        // তারিখ পরিবর্তনের সাথে সাথে Target Month অটো সেট হবে (যেমন: "2026-10")
+        setTargetMonth(`${year}-${month}`);
+      }
+    }
+  };
+
+  // "Today" বাটনে ক্লিক করলে আজকের তারিখ ও মাস সেট করার হ্যান্ডলার
+  const handleSetToday = () => {
+    const todayStr = getTodayDateString();
+    handleDateChange(todayStr);
+  };
+
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [selectedLoanId, setSelectedLoanId] = useState<string>('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -84,18 +117,15 @@ export const CollectKistiModal: React.FC<CollectKistiModalProps> = ({
       setKistiType(targetType);
 
       // Default date to today once upon opening
-      const today = new Date();
-      setDateDay(String(today.getDate()).padStart(2, '0'));
-      setDateMonth(String(today.getMonth() + 1).padStart(2, '0'));
-      setDateYear(String(today.getFullYear()));
+      const todayStr = getTodayDateString();
+      setPaymentDate(todayStr);
 
-      // Target Month strictly independent from Payment Date
       if (initialPeriodMonth) {
-        setPeriodMonth(initialPeriodMonth);
+        setTargetMonth(initialPeriodMonth);
       } else {
-        const curY = today.getFullYear();
-        const curM = String(today.getMonth() + 1).padStart(2, '0');
-        setPeriodMonth(`${curY}-${curM}`);
+        const curY = new Date().getFullYear();
+        const curM = String(new Date().getMonth() + 1).padStart(2, '0');
+        setTargetMonth(`${curY}-${curM}`);
       }
 
       // Base amount initialization
@@ -193,13 +223,9 @@ export const CollectKistiModal: React.FC<CollectKistiModalProps> = ({
         finalRemarks = finalRemarks ? `${finalRemarks} (${extraNotes.join(', ')})` : extraNotes.join(', ');
       }
 
-      // Assemble the exact date without any auto-reset or reversion to current timestamp
-      const dStr = dateDay.trim().padStart(2, '0') || '01';
-      const mStr = dateMonth.trim().padStart(2, '0') || '01';
-      let yStr = dateYear.trim();
-      if (yStr.length === 2) yStr = `20${yStr}`;
-      else if (!yStr) yStr = '2026';
-      const resolvedDate = `${yStr}-${mStr}-${dStr}`;
+      // Resolve payment date and target month
+      const resolvedDate = paymentDate || getTodayDateString();
+      const resolvedTargetMonth = targetMonth || resolvedDate.slice(0, 7);
 
       const newTx = collectKisti({
         memberId: selectedMemberId,
@@ -210,8 +236,8 @@ export const CollectKistiModal: React.FC<CollectKistiModalProps> = ({
         amount: totalCollectedAmount, // backwards-compatible total
         date: resolvedDate,
         actualPaymentDate: resolvedDate,
-        periodMonth: periodMonth || `${yStr}-${mStr}`,
-        targetMonth: periodMonth || `${yStr}-${mStr}`,
+        periodMonth: resolvedTargetMonth,
+        targetMonth: resolvedTargetMonth,
         paymentMethod,
         collectedBy: collectorName,
         collector: collectorName,
@@ -385,105 +411,47 @@ export const CollectKistiModal: React.FC<CollectKistiModalProps> = ({
             </div>
           )}
 
-          {/* Payment Date & Target Month - Cleanly editable and strictly independent */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-            {/* Payment Date (প্রকৃত জমার তারিখ) - Isolated Day, Month, Year Inputs */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-neutral-700 uppercase">
-                  {language === 'bn' ? 'প্রকৃত জমার তারিখ' : 'Payment Date'} <span className="text-red-500">*</span>
+          {/* Payment Date & Target Month - Clean 2-column layout with label-level Today button */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end mb-4 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+            {/* Payment Date ফিল্ড */}
+            <div className="w-full">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-gray-700 tracking-wide uppercase">
+                  {language === 'bn' ? 'প্রকৃত জমার তারিখ (Payment Date)' : 'Payment Date'} <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[10px] text-neutral-500 font-mono">DD / MM / YYYY</span>
-              </div>
-              <div className="flex items-center gap-1.5 p-1.5 bg-white border border-neutral-300 rounded-lg focus-within:ring-2 focus-within:ring-emerald-500 shadow-2xs">
-                {/* Day Input */}
-                <div className="flex flex-col items-center">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="DD"
-                    value={dateDay}
-                    onChange={(e) => {
-                      const clean = normalizeNumberInput(e.target.value).slice(0, 2);
-                      setDateDay(clean);
-                      if (error) setError('');
-                    }}
-                    className="w-9 text-center font-mono font-bold text-sm text-neutral-900 focus:outline-none"
-                    title="দিন (Day 01-31)"
-                  />
-                  <span className="text-[9px] text-neutral-400">দিন</span>
-                </div>
-                <span className="text-neutral-400 font-bold">/</span>
-
-                {/* Month Input */}
-                <div className="flex flex-col items-center">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="MM"
-                    value={dateMonth}
-                    onChange={(e) => {
-                      const clean = normalizeNumberInput(e.target.value).slice(0, 2);
-                      setDateMonth(clean);
-                      if (error) setError('');
-                    }}
-                    className="w-9 text-center font-mono font-bold text-sm text-neutral-900 focus:outline-none"
-                    title="মাস (Month 01-12)"
-                  />
-                  <span className="text-[9px] text-neutral-400">মাস</span>
-                </div>
-                <span className="text-neutral-400 font-bold">/</span>
-
-                {/* Year Input */}
-                <div className="flex flex-col items-center flex-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="YYYY"
-                    value={dateYear}
-                    onChange={(e) => {
-                      const clean = normalizeNumberInput(e.target.value).slice(0, 4);
-                      setDateYear(clean);
-                      if (error) setError('');
-                    }}
-                    className="w-16 text-center font-mono font-bold text-sm text-neutral-900 focus:outline-none"
-                    title="বছর (Year e.g. 2024)"
-                  />
-                  <span className="text-[9px] text-neutral-400">বছর</span>
-                </div>
-
-                {/* Quick Today Button */}
+                {/* Today বাটনটি লেবেলের পাশে দেওয়া হয়েছে যাতে ইনপুটের ভেতরে ওভারল্যাপ না হয় */}
                 <button
                   type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    setDateDay(String(today.getDate()).padStart(2, '0'));
-                    setDateMonth(String(today.getMonth() + 1).padStart(2, '0'));
-                    setDateYear(String(today.getFullYear()));
-                  }}
-                  className="px-2 py-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors shrink-0 cursor-pointer"
-                  title="আজকের তারিখ বসান"
+                  onClick={handleSetToday}
+                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition-colors cursor-pointer"
+                  title={language === 'bn' ? 'আজকের তারিখ সেট করুন' : 'Set to Today'}
                 >
-                  {language === 'bn' ? 'আজ' : 'Today'}
+                  {language === 'bn' ? 'আজ (Today)' : 'Today'}
                 </button>
               </div>
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium font-mono text-neutral-900 shadow-2xs"
+                required
+              />
             </div>
 
-            {/* Target Month (কিস্তির মাস) - Strictly Independent Dropdown */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-neutral-700 uppercase">
-                  <span>{language === 'bn' ? 'কিস্তির মাস (Target Month)' : 'Target Month'}</span>
-                  <span className="text-red-500 ml-0.5">*</span>
+            {/* Target Month ফিল্ড */}
+            <div className="w-full">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-gray-700 tracking-wide uppercase">
+                  {language === 'bn' ? 'কিস্তির মাস (Target Month)' : 'Target Month'} <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[10px] text-emerald-700 font-mono font-bold">
-                  {periodMonth}
+                <span className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                  {targetMonth}
                 </span>
               </div>
               <select
-                value={periodMonth}
-                onChange={(e) => setPeriodMonth(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium font-mono"
+                value={targetMonth}
+                onChange={(e) => setTargetMonth(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium font-mono text-neutral-900 shadow-2xs"
                 required
               >
                 {monthOptions.map((opt) => (

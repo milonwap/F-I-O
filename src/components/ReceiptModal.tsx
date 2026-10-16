@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Printer, X, CheckCircle } from 'lucide-react';
 import { KistiTransaction, Member, Language } from '../types/somiti';
-import { formatCurrency, formatDate, numberToWords, toBengaliNumber } from '../utils/formatters';
+import { formatCurrency, formatDate, numberToWords } from '../utils/formatters';
 
 interface ReceiptModalProps {
   transaction: KistiTransaction | null;
@@ -16,6 +16,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   language,
   onClose,
 }) => {
+  // Listen for Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   if (!transaction) return null;
 
   const handlePrint = () => {
@@ -38,39 +49,41 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
-      <div className="printable-receipt relative w-full max-w-xl bg-white rounded-xl shadow-2xl border border-neutral-200 overflow-hidden text-neutral-900">
-        {/* Header Actions (hidden in print) */}
-        <div className="no-print flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 text-white border-b border-blue-900/50">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-emerald-400" />
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto no-print"
+      aria-modal="true"
+      role="dialog"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="printable-receipt relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-neutral-200 overflow-y-auto max-h-[90vh] text-neutral-900 my-auto flex flex-col"
+      >
+        {/* Header (hidden in print, sticky top so close button is always visible) */}
+        <div className="no-print sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 text-white border-b border-blue-900/50 shadow-xs">
+          <div className="flex items-center gap-2 pr-12">
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
             <span className="text-sm font-semibold tracking-wide">
               {language === 'bn' ? 'টাকা জমার অফিসিয়াল রসিদ' : 'Official Money Receipt'}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors"
-            >
-              <Printer className="w-4 h-4" />
-              <span>{language === 'bn' ? 'রসিদ প্রিন্ট করুন' : 'Print Receipt'}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-neutral-400 hover:text-white rounded-md transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+
+          {/* Top-Right Floating Close Button */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 text-neutral-500 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-full transition-colors cursor-pointer z-20"
+            aria-label={language === 'bn' ? 'রসিদ বন্ধ করুন' : 'Close'}
+            title={language === 'bn' ? 'রসিদ বন্ধ করুন (Esc)' : 'Close Receipt (Esc)'}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Printable Receipt Paper */}
-        <div className="p-8 bg-white print:p-0">
+        <div className="p-6 sm:p-8 bg-white print:p-0 flex-1">
           {/* Somiti Header */}
           <div className="text-center pb-5 border-b border-neutral-300">
-
             <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">
               Friend Initiative Organization
             </h2>
@@ -184,6 +197,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             {language === 'bn'
               ? 'এটি একটি কম্পিউটার জেনারেটেড মানি রসিদ। কোনো গরমিল থাকলে ৭ কার্যদিবসের মধ্যে ক্যাশিয়ারের সাথে যোগাযোগ করুন।'
               : 'This is a system generated receipt. For any discrepancy, contact the Cashier within 7 working days.'}
+          </div>
+        </div>
+
+        {/* Accessible Sticky Action Bar (hidden in print) */}
+        <div className="no-print sticky bottom-0 bg-white/95 backdrop-blur-xs border-t border-neutral-200 p-4 px-6 flex items-center justify-between gap-3 z-10 shadow-sm">
+          <div className="text-xs text-neutral-500 hidden sm:block">
+            {language === 'bn' ? 'রসিদ প্রিন্ট বা সংরক্ষণ করতে পারেন' : 'You can print or save this receipt'}
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors cursor-pointer"
+            >
+              {language === 'bn' ? 'রসিদ বন্ধ করুন' : 'Close Receipt'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2 text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>{language === 'bn' ? 'প্রিন্ট করুন' : 'Print Receipt'}</span>
+            </button>
           </div>
         </div>
       </div>
