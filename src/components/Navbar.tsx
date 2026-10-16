@@ -24,6 +24,7 @@ import {
 import { ActiveTab, Language, PortalSubTab, isAdminRole } from '../types/somiti';
 import { useSomiti } from '../context/SomitiContext';
 import { MemberAvatar } from './MemberAvatar';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -314,6 +315,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
               <span className="hidden sm:inline">{language === 'bn' ? 'ক্লাউড সংযুক্ত' : 'Live'}</span>
             </div>
+
+            {/* In-App PWA Install Button */}
+            <PWAInstallButton />
           </div>
         </div>
       </header>
@@ -495,6 +499,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Drawer In-App PWA Install Banner */}
+            <div className="px-4 py-2 border-t border-neutral-100 dark:border-neutral-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <PWAInstallButton className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer" />
             </div>
 
             {/* Drawer Bottom Footer Profile Card & Quick Actions */}

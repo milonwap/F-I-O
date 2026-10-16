@@ -18,6 +18,7 @@ import { RulesView } from './components/RulesView';
 import { SettingsView } from './components/SettingsView';
 import { LoginPage } from './components/LoginPage';
 import { LogoutPage } from './components/LogoutPage';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { ActiveTab, Member, KistiTransaction, isAdminRole } from './types/somiti';
 import { Shield, Lock, ArrowLeft, AlertTriangle, X } from 'lucide-react';
 
@@ -344,6 +345,9 @@ const SomitiApp: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* 7. PWA Global Offline Mode Connectivity Indicator */}
+      <OfflineIndicator />
     </div>
   );
 };
