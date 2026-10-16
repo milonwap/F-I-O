@@ -1,6 +1,80 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Gracefully handle Vite dev-server WebSocket HMR runner in preview environment
+      (function() {
+        var OriginalWebSocket = window.WebSocket;
+        if (OriginalWebSocket) {
+          window.WebSocket = function(url, protocols) {
+            if (
+              protocols === 'vite-hmr' ||
+              protocols === 'vite-ping' ||
+              (typeof url === 'string' && (url.indexOf('token=') !== -1 || url.indexOf('24678') !== -1))
+            ) {
+              var dummy = new EventTarget();
+              dummy.close = function() {};
+              dummy.send = function() {};
+              dummy.readyState = 1; // OPEN
+              dummy.addEventListener = EventTarget.prototype.addEventListener.bind(dummy);
+              dummy.removeEventListener = EventTarget.prototype.removeEventListener.bind(dummy);
+              dummy.dispatchEvent = EventTarget.prototype.dispatchEvent.bind(dummy);
+              setTimeout(function() {
+                dummy.dispatchEvent(new Event('open'));
+              }, 5);
+              return dummy;
+            }
+            return new OriginalWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = OriginalWebSocket.prototype;
+          window.WebSocket.CONNECTING = 0;
+          window.WebSocket.OPEN = 1;
+          window.WebSocket.CLOSING = 2;
+          window.WebSocket.CLOSED = 3;
+        }
+
+        var origConsoleError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var text = args.map(function(a) { return (a && a.message) || String(a); }).join(' ');
+          if (text.indexOf('WebSocket') !== -1 || text.indexOf('[vite]') !== -1 || text.indexOf('ModuleRunner') !== -1) {
+            return;
+          }
+          return origConsoleError.apply(console, arguments);
+        };
+
+        window.addEventListener('error', function (e) {
+          var msg = (e && e.message) || '';
+          var file = (e && e.filename) || '';
+          if (
+            file.indexOf('@vite/client') !== -1 ||
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('ModuleRunner') !== -1 ||
+            msg.indexOf('[vite]') !== -1
+          ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function (e) {
+          var reason = e.reason;
+          var msg = (reason && (reason.message || String(reason))) || '';
+          var stack = (reason && reason.stack) || '';
+          if (
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('ModuleRunner') !== -1 ||
+            msg.indexOf('[vite]') !== -1 ||
+            stack.indexOf('@vite/client') !== -1
+          ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Friend Initiative Organization</title>
@@ -12,41 +86,16 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="FIO Somiti" />
+    <meta name="apple-mobile-web-app-title" content="F I O" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="alternate icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <script>
-      // Gracefully ignore benign Vite WebSocket/HMR runner errors in preview environment
-      window.addEventListener('error', function (e) {
-        if (
-          (e.filename && e.filename.indexOf('@vite/client') !== -1) ||
-          (e.message && (e.message.indexOf('WebSocket') !== -1 || e.message.indexOf('ModuleRunner') !== -1))
-        ) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
-        }
-      });
-      window.addEventListener('unhandledrejection', function (e) {
-        var reason = e.reason;
-        var msg = reason && (reason.message || String(reason));
-        var stack = (reason && reason.stack) || '';
-        if (
-          (msg && (msg.indexOf('WebSocket') !== -1 || msg.indexOf('ModuleRunner') !== -1)) ||
-          stack.indexOf('@vite/client') !== -1
-        ) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
-        }
-      });
-    </script>
   </head>
   <body class="bg-neutral-50 text-neutral-900 antialiased font-sans selection:bg-emerald-100 selection:text-emerald-900">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

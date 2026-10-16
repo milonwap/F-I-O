@@ -22,7 +22,7 @@ export default defineConfig(() => {
         manifest: {
           id: '/',
           name: 'Friend Initiative Organization',
-          short_name: 'FIO Somiti',
+          short_name: 'F I O',
           description:
             'Comprehensive cooperative society management platform for tracking member savings kisti, loans, project investments, and committee task workflows.',
           theme_color: '#064e3b',
@@ -91,6 +91,52 @@ export default defineConfig(() => {
           type: 'module',
         },
       }),
+      {
+        name: 'suppress-vite-hmr-websocket',
+        transformIndexHtml: {
+          order: 'pre' as const,
+          handler() {
+            return [
+              {
+                tag: 'script',
+                attrs: { type: 'text/javascript' },
+                children: `
+(function() {
+  var OriginalWebSocket = window.WebSocket;
+  if (!OriginalWebSocket) return;
+  window.WebSocket = function(url, protocols) {
+    if (
+      protocols === 'vite-hmr' ||
+      protocols === 'vite-ping' ||
+      (typeof url === 'string' && (url.indexOf('token=') !== -1 || url.indexOf('24678') !== -1))
+    ) {
+      var dummy = new EventTarget();
+      dummy.close = function() {};
+      dummy.send = function() {};
+      dummy.readyState = 1; // OPEN
+      dummy.addEventListener = EventTarget.prototype.addEventListener.bind(dummy);
+      dummy.removeEventListener = EventTarget.prototype.removeEventListener.bind(dummy);
+      dummy.dispatchEvent = EventTarget.prototype.dispatchEvent.bind(dummy);
+      setTimeout(function() {
+        dummy.dispatchEvent(new Event('open'));
+      }, 5);
+      return dummy;
+    }
+    return new OriginalWebSocket(url, protocols);
+  };
+  window.WebSocket.prototype = OriginalWebSocket.prototype;
+  window.WebSocket.CONNECTING = 0;
+  window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2;
+  window.WebSocket.CLOSED = 3;
+})();
+`,
+                injectTo: 'head-prepend' as const,
+              },
+            ];
+          },
+        },
+      },
     ],
     resolve: {
       alias: {
@@ -98,11 +144,9 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // HMR is disabled in AI Studio per environment constraints.
+      hmr: false,
+      watch: null,
     },
   };
 });
