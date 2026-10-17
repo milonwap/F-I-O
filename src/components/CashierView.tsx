@@ -11,15 +11,26 @@ import {
   CheckCircle,
   Receipt,
   User,
+  Edit3,
 } from 'lucide-react';
 import { useSomiti } from '../context/SomitiContext';
-import { PaymentMethod, CashbookEntry } from '../types/somiti';
+import { PaymentMethod, CashbookEntry, KistiTransaction, isAdminRole } from '../types/somiti';
 import { formatCurrency, formatDate, toBengaliNumber } from '../utils/formatters';
 import { DateInput } from './DateInput';
 
-export const CashierView: React.FC = () => {
-  const { cashbook, members, addCashbookEntry, language } = useSomiti();
+interface CashierViewProps {
+  onOpenEditTx?: (tx: KistiTransaction) => void;
+  onOpenReceipt?: (tx: KistiTransaction) => void;
+}
 
+export const CashierView: React.FC<CashierViewProps> = ({
+  onOpenEditTx,
+  onOpenReceipt,
+}) => {
+  const { cashbook, members, transactions, addCashbookEntry, language, currentMember } = useSomiti();
+  const isCashierOrAdmin = isAdminRole(currentMember?.role) || currentMember?.role === 'cashier' || currentMember?.role === 'lead_executive';
+
+  const [activeViewMode, setActiveViewMode] = useState<'cashbook' | 'kisti_txs'>('cashbook');
   const [filterType, setFilterType] = useState<'all' | 'inflow' | 'outflow'>('all');
   const [filterDate, setFilterDate] = useState<string>('');
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
@@ -206,121 +217,293 @@ export const CashierView: React.FC = () => {
         </div>
       </div>
 
-      {/* Cashbook Ledger Table */}
+      {/* Cashbook Ledger & Kisti Transaction Register */}
       <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-4 sm:p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-bold text-neutral-900">
-              {language === 'bn' ? 'ক্যাশিয়ারের দৈনিক ক্যাশবুক খতিয়ান' : 'Cashier Daily Cashbook Register'}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              {language === 'bn'
-                ? 'কিস্তি আদায়, ঋণ বিতরণ ও প্রকল্প খরচের স্বয়ংক্রিয় ক্যাশ এন্ট্রি'
-                : 'Automated cash register of all inflows, disbursements & operational vouchers'}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-neutral-100 rounded-lg text-xs">
-              <button
-                onClick={() => setFilterType('all')}
-                className={`px-3 py-1 font-medium rounded-md transition-colors ${
-                  filterType === 'all' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                {language === 'bn' ? 'সকল' : 'All'}
-              </button>
-              <button
-                onClick={() => setFilterType('inflow')}
-                className={`px-3 py-1 font-medium rounded-md transition-colors ${
-                  filterType === 'inflow' ? 'bg-white text-emerald-800 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                {language === 'bn' ? 'জমা (In)' : 'Inflow'}
-              </button>
-              <button
-                onClick={() => setFilterType('outflow')}
-                className={`px-3 py-1 font-medium rounded-md transition-colors ${
-                  filterType === 'outflow' ? 'bg-white text-red-800 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                {language === 'bn' ? 'খরচ (Out)' : 'Outflow'}
-              </button>
-            </div>
-
-            {/* Date filter (DD/MM/YYYY) */}
-            <div className="w-56">
-              <DateInput
-                value={filterDate}
-                onChange={(val) => setFilterDate(val)}
-              />
-            </div>
-            {filterDate && (
-              <button
-                type="button"
-                onClick={() => setFilterDate('')}
-                className="text-xs text-neutral-500 hover:text-neutral-900 underline whitespace-nowrap cursor-pointer"
-              >
-                {language === 'bn' ? 'রিসেট' : 'Clear'}
-              </button>
-            )}
-          </div>
+        {/* Navigation Sub-tabs */}
+        <div className="flex border-b border-neutral-200 bg-neutral-50/80 px-4 pt-3">
+          <button
+            onClick={() => setActiveViewMode('cashbook')}
+            className={`pb-2.5 px-3.5 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
+              activeViewMode === 'cashbook'
+                ? 'border-emerald-700 text-emerald-900 bg-white rounded-t-lg'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            {language === 'bn' ? 'ক্যাশবুক খতিয়ান (Daily Cashbook)' : 'Daily Cashbook'}
+          </button>
+          <button
+            onClick={() => setActiveViewMode('kisti_txs')}
+            className={`pb-2.5 px-3.5 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeViewMode === 'kisti_txs'
+                ? 'border-emerald-700 text-emerald-900 bg-white rounded-t-lg'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+            <span>{language === 'bn' ? `কিস্তি ট্রানজেকশন হিস্ট্রি ও এডিট (${toBengaliNumber(transactions.length)})` : `Kisti Collection History (${transactions.length})`}</span>
+          </button>
         </div>
 
-        {filteredEntries.length === 0 ? (
-          <div className="text-center py-12 text-neutral-500 text-sm">
-            {language === 'bn' ? 'কোনো ক্যাশ ভাউচার পাওয়া যায়নি।' : 'No cashbook entries found.'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase tracking-wider border-b border-neutral-200">
-                <tr>
-                  <th className="py-3 px-4"># {language === 'bn' ? 'ভাউচার' : 'Voucher'}</th>
-                  <th className="py-3 px-4">{language === 'bn' ? 'তারিখ' : 'Date'}</th>
-                  <th className="py-3 px-4">{language === 'bn' ? 'বিবরণ ও খাত' : 'Description & Category'}</th>
-                  <th className="py-3 px-4">{language === 'bn' ? 'মাধ্যম' : 'Method'}</th>
-                  <th className="py-3 px-4">{language === 'bn' ? 'রেকর্ডকারী ক্যাশিয়ার' : 'Recorded By'}</th>
-                  <th className="py-3 px-4 text-right">{language === 'bn' ? 'পরিমাণ (৳)' : 'Amount (BDT)'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200">
-                {filteredEntries.map((entry) => {
-                  const isInflow = entry.type === 'inflow';
-                  return (
-                    <tr key={entry.id} className="hover:bg-neutral-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-neutral-800">{entry.voucherNo}</td>
-                      <td className="py-3 px-4 font-mono text-neutral-600">{formatDate(entry.date, language)}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-neutral-900 flex items-center gap-1.5">
-                          {isInflow ? (
-                            <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          ) : (
-                            <ArrowUpRight className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                          )}
-                          <span>{entry.title}</span>
-                        </div>
-                        {entry.notes && (
-                          <div className="text-[11px] text-neutral-500 mt-0.5 truncate max-w-sm">{entry.notes}</div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="capitalize font-mono px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
-                          {entry.paymentMethod}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-neutral-600">{entry.recordedByCashier}</td>
-                      <td className="py-3 px-4 text-right font-mono font-bold tabular-nums text-sm">
-                        <span className={isInflow ? 'text-emerald-700' : 'text-red-600'}>
-                          {isInflow ? '+' : '-'} {formatCurrency(entry.amount, language)}
-                        </span>
-                      </td>
+        {/* VIEW 1: CASHBOOK REGISTER */}
+        {activeViewMode === 'cashbook' && (
+          <div>
+            <div className="p-4 sm:p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-neutral-900">
+                  {language === 'bn' ? 'ক্যাশিয়ারের দৈনিক ক্যাশবুক খতিয়ান' : 'Cashier Daily Cashbook Register'}
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {language === 'bn'
+                    ? 'কিস্তি আদায়, ঋণ বিতরণ ও প্রকল্প খরচের স্বয়ংক্রিয় ক্যাশ এন্ট্রি'
+                    : 'Automated cash register of all inflows, disbursements & operational vouchers'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-1 p-1 bg-neutral-100 rounded-lg text-xs">
+                  <button
+                    onClick={() => setFilterType('all')}
+                    className={`px-3 py-1 font-medium rounded-md transition-colors cursor-pointer ${
+                      filterType === 'all' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    {language === 'bn' ? 'সকল' : 'All'}
+                  </button>
+                  <button
+                    onClick={() => setFilterType('inflow')}
+                    className={`px-3 py-1 font-medium rounded-md transition-colors cursor-pointer ${
+                      filterType === 'inflow' ? 'bg-white text-emerald-800 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    {language === 'bn' ? 'জমা (In)' : 'Inflow'}
+                  </button>
+                  <button
+                    onClick={() => setFilterType('outflow')}
+                    className={`px-3 py-1 font-medium rounded-md transition-colors cursor-pointer ${
+                      filterType === 'outflow' ? 'bg-white text-red-800 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    {language === 'bn' ? 'খরচ (Out)' : 'Outflow'}
+                  </button>
+                </div>
+
+                {/* Date filter (DD/MM/YYYY) */}
+                <div className="w-56">
+                  <DateInput
+                    value={filterDate}
+                    onChange={(val) => setFilterDate(val)}
+                  />
+                </div>
+                {filterDate && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterDate('')}
+                    className="text-xs text-neutral-500 hover:text-neutral-900 underline whitespace-nowrap cursor-pointer"
+                  >
+                    {language === 'bn' ? 'রিসেট' : 'Clear'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filteredEntries.length === 0 ? (
+              <div className="text-center py-12 text-neutral-500 text-sm">
+                {language === 'bn' ? 'কোনো ক্যাশ ভাউচার পাওয়া যায়নি।' : 'No cashbook entries found.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase tracking-wider border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-4"># {language === 'bn' ? 'ভাউচার' : 'Voucher'}</th>
+                      <th className="py-3 px-4">{language === 'bn' ? 'তারিখ' : 'Date'}</th>
+                      <th className="py-3 px-4">{language === 'bn' ? 'বিবরণ ও খাত' : 'Description & Category'}</th>
+                      <th className="py-3 px-4">{language === 'bn' ? 'মাধ্যম' : 'Method'}</th>
+                      <th className="py-3 px-4">{language === 'bn' ? 'রেকর্ডকারী' : 'Recorded By'}</th>
+                      <th className="py-3 px-4 text-right">{language === 'bn' ? 'পরিমাণ (৳)' : 'Amount (BDT)'}</th>
+                      <th className="py-3 px-4 text-center">{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {filteredEntries.map((entry) => {
+                      const isInflow = entry.type === 'inflow';
+                      // Find matching kisti transaction if this is a collection entry
+                      const matchingTx = transactions.find(
+                        (t) =>
+                          (entry.notes && entry.notes.includes(t.receiptNo)) ||
+                          t.id === entry.id ||
+                          (entry.category === 'kisti_collection' &&
+                            t.memberId === entry.relatedMemberId &&
+                            (t.date === entry.date || t.amount === entry.amount))
+                      ) || (entry.category === 'kisti_collection' ? transactions.find(t => t.memberId === entry.relatedMemberId) : undefined);
+
+                      return (
+                        <tr key={entry.id} className="hover:bg-neutral-50/80 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-neutral-800">{entry.voucherNo}</td>
+                          <td className="py-3 px-4 font-mono text-neutral-600">{formatDate(entry.date, language)}</td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-neutral-900 flex items-center gap-1.5">
+                              {isInflow ? (
+                                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpRight className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                              )}
+                              <span>{entry.title}</span>
+                            </div>
+                            {entry.notes && (
+                              <div className="text-[11px] text-neutral-500 mt-0.5 truncate max-w-sm">{entry.notes}</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="capitalize font-mono px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">
+                              {entry.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-neutral-600">{entry.recordedByCashier}</td>
+                          <td className="py-3 px-4 text-right font-mono font-bold tabular-nums text-sm">
+                            <span className={isInflow ? 'text-emerald-700' : 'text-red-600'}>
+                              {isInflow ? '+' : '-'} {formatCurrency(entry.amount, language)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {matchingTx && isCashierOrAdmin && onOpenEditTx ? (
+                              <button
+                                onClick={() => onOpenEditTx(matchingTx)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer shadow-2xs"
+                                title={language === 'bn' ? 'কিস্তি সংশোধন / এডিট করুন' : 'Edit Kisti Collection'}
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>{language === 'bn' ? 'এডিট' : 'Edit'}</span>
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-neutral-400 font-mono">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* VIEW 2: KISTI TRANSACTION HISTORY REGISTER */}
+        {activeViewMode === 'kisti_txs' && (
+          <div>
+            <div className="p-4 sm:p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
+                  <span>{language === 'bn' ? 'কিস্তি আদায় হিস্ট্রি ও সংশোধন প্যানেল' : 'Kisti Collection & Edit Registry'}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold border border-amber-200">
+                    {language === 'bn' ? 'এডমিন ও ক্যাশিয়ার এক্সেস' : 'Admin & Cashier Access'}
+                  </span>
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {language === 'bn'
+                    ? 'পূর্বের যেকোনো কিস্তি বা জরিমানায় ভুল হলে সরাসরি এডিট বাটনে ক্লিক করে তারিখ, কিস্তির মাস ও টাকার পরিমাণ সংশোধন করুন।'
+                    : 'Click the Edit (✏️) button on any kisti transaction to rectify amounts, late fees, or dates with auto-rebalancing.'}
+                </p>
+              </div>
+            </div>
+
+            {transactions.length === 0 ? (
+              <div className="text-center py-12 text-neutral-500 text-sm">
+                {language === 'bn' ? 'কোনো কিস্তি আদায় পাওয়া যায়নি।' : 'No kisti collections found.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase tracking-wider border-b border-neutral-200">
+                    <tr>
+                      <th className="py-3 px-3"># {language === 'bn' ? 'রসিদ' : 'Receipt'}</th>
+                      <th className="py-3 px-3">{language === 'bn' ? 'তারিখ' : 'Date'}</th>
+                      <th className="py-3 px-3">{language === 'bn' ? 'সদস্যের নাম ও আইডি' : 'Member'}</th>
+                      <th className="py-3 px-3">{language === 'bn' ? 'কিস্তির মাস' : 'Month'}</th>
+                      <th className="py-3 px-3 text-right">{language === 'bn' ? 'মূল কিস্তি (৳)' : 'Kisti (৳)'}</th>
+                      <th className="py-3 px-3 text-right">{language === 'bn' ? 'জরিমানা (৳)' : 'Fine (৳)'}</th>
+                      <th className="py-3 px-3 text-right">{language === 'bn' ? 'মোট সংগৃহীত (৳)' : 'Total (৳)'}</th>
+                      <th className="py-3 px-3 text-center">{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {transactions
+                      .slice()
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map((tx) => {
+                        const memberObj = members.find((m) => m.id === tx.memberId);
+                        const principal = tx.principalAmount !== undefined
+                          ? tx.principalAmount
+                          : (tx.type === 'savings' ? Math.max(0, tx.amount - (tx.fineAmount || 0)) : tx.amount);
+                        const fine = Number(tx.fineAmount || (tx.type === 'fine_fee' ? tx.amount : 0));
+                        const total = tx.totalPaid !== undefined ? tx.totalPaid : tx.amount;
+
+                        return (
+                          <tr key={tx.id} className="hover:bg-amber-50/30 transition-colors">
+                            <td className="py-3 px-3 font-mono font-bold text-neutral-800">
+                              <div>{tx.receiptNo}</div>
+                              {tx.isEdited && (
+                                <span className="inline-block text-[9px] font-bold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200 mt-0.5">
+                                  {language === 'bn' ? 'সংশোধিত' : 'Edited'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-neutral-600">{formatDate(tx.date, language)}</td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-neutral-900">
+                                {language === 'bn' ? memberObj?.nameBn || memberObj?.nameEn : memberObj?.nameEn}
+                              </div>
+                              <div className="text-[10px] text-neutral-400 font-mono">{memberObj?.memberNo}</div>
+                            </td>
+                            <td className="py-3 px-3 font-mono font-semibold text-neutral-700">
+                              {tx.targetMonth || tx.periodMonth}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-bold tabular-nums text-emerald-800">
+                              {formatCurrency(principal, language)}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono tabular-nums">
+                              {fine > 0 ? (
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                  +{formatCurrency(fine, language)}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400">০ ৳</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-black tabular-nums text-neutral-900 text-sm">
+                              {formatCurrency(total, language)}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {isCashierOrAdmin && onOpenEditTx && (
+                                  <button
+                                    onClick={() => onOpenEditTx(tx)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer shadow-2xs"
+                                    title={language === 'bn' ? 'সংশোধন / এডিট করুন' : 'Edit Kisti Collection'}
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>{language === 'bn' ? 'এডিট' : 'Edit'}</span>
+                                  </button>
+                                )}
+                                {onOpenReceipt && (
+                                  <button
+                                    onClick={() => onOpenReceipt(tx)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 transition-colors cursor-pointer"
+                                  >
+                                    <span>{language === 'bn' ? 'রসিদ' : 'Receipt'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

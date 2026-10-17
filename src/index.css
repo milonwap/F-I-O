@@ -13,22 +13,72 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
+  /* Universal clean print reset */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  .printable-receipt, .printable-receipt * {
-    visibility: visible;
-  }
-  .printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 10px;
-    background: white;
-  }
+
   .no-print {
     display: none !important;
+  }
+
+  /* When printing the Money Receipt, hide all background app layouts to prevent multi-page ghost flow */
+  body.receipt-open #root > div > nav,
+  body.receipt-open #root > div > main,
+  body.receipt-open #root > div > footer,
+  body.receipt-open #root > div > *:not(.receipt-modal-backdrop),
+  body:has(.printable-receipt) #root > div > nav,
+  body:has(.printable-receipt) #root > div > main,
+  body:has(.printable-receipt) #root > div > footer,
+  body:has(.printable-receipt) #root > div > *:not(:has(.printable-receipt)) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Flatten modal backdrop so it doesn't create scrollbars or dark screen */
+  .receipt-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    width: 100% !important;
+    max-width: 140mm !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Money Receipt A5 Page Specifications: strictly 1-page fit */
+  .printable-receipt {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 140mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #171717 !important;
+    border: 1.5px solid #262626 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
   }
 }

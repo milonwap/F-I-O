@@ -27,6 +27,7 @@ import {
   pushToFirebase,
   subscribeToFirebase,
   SomitiCloudBundle,
+  handleEditKistiTransaction,
 } from '../services/firebase';
 
 interface SomitiContextType {
@@ -74,6 +75,14 @@ interface SomitiContextType {
   
   // Kisti actions
   collectKisti: (tx: Omit<KistiTransaction, 'id' | 'receiptNo'>) => KistiTransaction;
+  editKistiTransaction: (params: {
+    transactionId: string;
+    newKistiAmount: number;
+    newFineAmount: number;
+    newDate: string;
+    newTargetMonth: string;
+    correctionReason?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   
   // Loan actions
   disburseLoan: (loan: Omit<Loan, 'id' | 'loanNo' | 'paidAmount' | 'remainingAmount' | 'paidInstallments' | 'status'>) => Loan;
@@ -984,6 +993,129 @@ export const SomitiProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return newTx;
   };
 
+  // Edit Kisti Transaction (Admin / Cashier)
+  const editKistiTransaction = async (params: {
+    transactionId: string;
+    newKistiAmount: number;
+    newFineAmount: number;
+    newDate: string;
+    newTargetMonth: string;
+    correctionReason?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    const targetTx = transactions.find((t) => t.id === params.transactionId);
+    if (!targetTx) {
+      return { success: false, error: 'লেনদেন রেকর্ডটি খুঁজে পাওয়া যায়নি!' };
+    }
+
+    const memberId = targetTx.memberId;
+    const oldKistiAmount = targetTx.principalAmount !== undefined
+      ? targetTx.principalAmount
+      : (targetTx.type === 'savings' ? Math.max(0, targetTx.amount - (targetTx.fineAmount || 0)) : targetTx.amount);
+    const oldFineAmount = Number(targetTx.fineAmount || (targetTx.type === 'fine_fee' ? targetTx.amount : 0));
+
+    const kistiDiff = Number(params.newKistiAmount) - Number(oldKistiAmount);
+    const fineDiff = Number(params.newFineAmount) - Number(oldFineAmount);
+    const totalCashDiff = kistiDiff + fineDiff;
+    const newTotalPaid = Number(params.newKistiAmount) + Number(params.newFineAmount);
+
+    const editorName = currentMember?.nameEn || 'Cashier';
+
+    // 1. Update local transactions
+    const updatedTransactions = transactions.map((t) => {
+      if (t.id === params.transactionId) {
+        return {
+          ...t,
+          amount: newTotalPaid,
+          principalAmount: Number(params.newKistiAmount),
+          fineAmount: Number(params.newFineAmount),
+          totalPaid: newTotalPaid,
+          date: params.newDate,
+          actualPaymentDate: params.newDate,
+          targetMonth: params.newTargetMonth,
+          periodMonth: params.newTargetMonth,
+          remarks: t.remarks
+            ? (params.correctionReason ? `${t.remarks} [সংশোধিত: ${params.correctionReason}]` : `${t.remarks} [সংশোধিত]`)
+            : (params.correctionReason ? `[সংশোধিত: ${params.correctionReason}]` : '[সংশোধিত]'),
+          isEdited: true,
+          is_edited: true,
+          correctionReason: params.correctionReason || undefined,
+          lastEditedAt: new Date().toISOString(),
+          editedBy: editorName,
+        };
+      }
+      return t;
+    });
+
+    // 2. Update local member savings & fine
+    let updatedMembers = members;
+    if (targetTx.type === 'savings') {
+      updatedMembers = members.map((m) => {
+        if (m.id === memberId) {
+          const newSavings = Math.max(0, (m.totalSavingsDeposited || 0) + kistiDiff);
+          const newFine = Math.max(0, (m.total_fine_paid || 0) + fineDiff);
+          return {
+            ...m,
+            totalSavingsDeposited: newSavings,
+            total_deposited: newSavings,
+            total_fine_paid: newFine,
+          };
+        }
+        return m;
+      });
+    } else {
+      updatedMembers = members.map((m) => {
+        if (m.id === memberId) {
+          const newFine = Math.max(0, (m.total_fine_paid || 0) + fineDiff);
+          return {
+            ...m,
+            total_fine_paid: newFine,
+          };
+        }
+        return m;
+      });
+    }
+
+    // 3. Update matching cashbook entry
+    const updatedCashbook = cashbook.map((cb) => {
+      if (cb.relatedMemberId === memberId && (cb.notes?.includes(targetTx.receiptNo) || cb.notes?.includes(params.transactionId))) {
+        return {
+          ...cb,
+          amount: Math.max(0, Number(cb.amount || 0) + totalCashDiff),
+          date: params.newDate,
+          notes: `${cb.notes || ''} [সংশোধিত]`,
+        };
+      }
+      return cb;
+    });
+
+    // Update state
+    setTransactions(updatedTransactions);
+    setMembers(updatedMembers);
+    setCashbook(updatedCashbook);
+
+    // Run atomic Firestore transaction
+    const firestoreResult = await handleEditKistiTransaction({
+      transactionId: params.transactionId,
+      memberId,
+      oldKistiAmount,
+      newKistiAmount: params.newKistiAmount,
+      oldFineAmount,
+      newFineAmount: params.newFineAmount,
+      newDate: params.newDate,
+      newTargetMonth: params.newTargetMonth,
+      correctionReason: params.correctionReason,
+      editorName,
+    });
+
+    saveToServer({
+      members: updatedMembers,
+      transactions: updatedTransactions,
+      cashbook: updatedCashbook,
+    });
+
+    return firestoreResult;
+  };
+
   // Loan Disburse
   const disburseLoan = (
     loanData: Omit<Loan, 'id' | 'loanNo' | 'paidAmount' | 'remainingAmount' | 'paidInstallments' | 'status'>
@@ -1405,6 +1537,7 @@ export const SomitiProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateMember,
         deleteMember,
         collectKisti,
+        editKistiTransaction,
         disburseLoan,
         addProject,
         updateProject,

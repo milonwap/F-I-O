@@ -14,8 +14,9 @@ import {
   ExternalLink,
   ShieldCheck,
   KeyRound,
+  Edit3,
 } from 'lucide-react';
-import { Member, KistiTransaction, Language, Task } from '../types/somiti';
+import { Member, KistiTransaction, Language, Task, isAdminRole } from '../types/somiti';
 import { useSomiti } from '../context/SomitiContext';
 import { formatCurrency, formatDate, toBengaliNumber } from '../utils/formatters';
 import { MemberAvatar } from './MemberAvatar';
@@ -30,6 +31,7 @@ interface MemberProfileModalProps {
   onOpenReceipt: (tx: KistiTransaction) => void;
   onCollectForMember: (memberId: string) => void;
   onEditMember: (member: Member) => void;
+  onOpenEditTx?: (tx: KistiTransaction) => void;
 }
 
 export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
@@ -41,9 +43,10 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   onOpenReceipt,
   onCollectForMember,
   onEditMember,
+  onOpenEditTx,
 }) => {
   const { currentMember } = useSomiti();
-  const isCashier = currentMember?.role === 'lead_executive' || currentMember?.role === 'cashier';
+  const isCashier = isAdminRole(currentMember?.role) || currentMember?.role === 'cashier';
   const [activeTab, setActiveTab] = useState<'passbook' | 'personal' | 'tasks'>('passbook');
   const [isManageCredsOpen, setIsManageCredsOpen] = useState(false);
 
@@ -52,6 +55,20 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   const memberTxs = transactions
     .filter((tx) => tx.memberId === member.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const memberObjFine = Number((member as any)?.total_fine_paid ?? (member as any)?.totalFinePaid ?? 0);
+  const totalFinePaid = Math.max(
+    memberObjFine,
+    memberTxs.reduce((sum, tx) => {
+      const fineFromField = Number(tx.fineAmount || 0);
+      const fineFromType = tx.type === 'fine_fee' ? Number(tx.amount || 0) : 0;
+      return sum + Math.max(fineFromField, fineFromType);
+    }, 0)
+  );
+
+  const fineTxsCount = memberTxs.filter(
+    (tx) => (tx.fineAmount && tx.fineAmount > 0) || tx.type === 'fine_fee'
+  ).length;
 
   const memberTasks = tasks.filter((t) => t.assignedToMemberId === member.id);
 
@@ -161,7 +178,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
           </div>
 
           {/* Quick Financial Summary Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-neutral-200">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5 pt-4 border-t border-neutral-200">
             <div className="bg-white p-3 rounded-lg border border-neutral-200">
               <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
                 {language === 'bn' ? 'মোট সঞ্চয় জমা' : 'Total Savings'}
@@ -197,6 +214,42 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
               </div>
               <div className="text-lg font-bold font-mono tabular-nums text-neutral-900 mt-0.5">
                 {language === 'bn' ? `${toBengaliNumber(memberTxs.length)} টি` : `${memberTxs.length} Times`}
+              </div>
+            </div>
+
+            {/* 5. Total Late Fee / Jorimana Paid */}
+            <div className={`p-3 rounded-lg border col-span-2 sm:col-span-1 ${
+              totalFinePaid > 0
+                ? 'bg-amber-50/90 border-amber-300'
+                : 'bg-white border-neutral-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className={`text-[11px] font-semibold uppercase tracking-wide ${
+                  totalFinePaid > 0 ? 'text-amber-900' : 'text-neutral-500'
+                }`}>
+                  {language === 'bn' ? 'পরিশোধিত জরিমানা' : 'Total Late Fee'}
+                </div>
+                {totalFinePaid > 0 ? (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 font-bold font-mono">
+                    ⚠️ {toBengaliNumber(fineTxsCount)} {language === 'bn' ? 'টি' : 'txs'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-semibold font-sans">
+                    ✓ {language === 'bn' ? '০৳' : '৳ 0'}
+                  </span>
+                )}
+              </div>
+              <div className={`text-lg font-bold font-mono tabular-nums mt-0.5 ${
+                totalFinePaid > 0 ? 'text-amber-950' : 'text-neutral-900'
+              }`}>
+                {formatCurrency(totalFinePaid, language)}
+              </div>
+              <div className={`text-[10px] mt-0.5 ${
+                totalFinePaid > 0 ? 'text-amber-800 font-medium' : 'text-neutral-400'
+              }`}>
+                {totalFinePaid > 0
+                  ? (language === 'bn' ? 'বিলম্বিত কিস্তির মোট জরিমানা' : 'Delayed kisti late fees')
+                  : (language === 'bn' ? 'কোনো জরিমানা বকেয়া বা আদায় নেই' : 'Clean late fee record')}
               </div>
             </div>
           </div>
@@ -241,15 +294,40 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
           {/* TAB 1: PASSBOOK LEDGER */}
           {activeTab === 'passbook' && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-bold text-neutral-900">
-                  {language === 'bn' ? 'সদস্যের সকল কিস্তি ও জমার হিসাব' : 'Transaction History & Receipts'}
-                </h4>
-                <span className="text-xs text-neutral-500">
-                  {language === 'bn'
-                    ? `সর্বমোট রেকর্ড: ${toBengaliNumber(memberTxs.length)} টি`
-                    : `Total Records: ${memberTxs.length}`}
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 bg-neutral-50 p-3.5 rounded-xl border border-neutral-200">
+                <div>
+                  <h4 className="text-sm font-bold text-neutral-900">
+                    {language === 'bn' ? 'সদস্যের সকল কিস্তি ও জমার হিসাব' : 'Transaction History & Receipts'}
+                  </h4>
+                  <span className="text-xs text-neutral-500 mt-0.5 block">
+                    {language === 'bn'
+                      ? `সর্বমোট রেকর্ড: ${toBengaliNumber(memberTxs.length)} টি`
+                      : `Total Records: ${memberTxs.length}`}
+                  </span>
+                </div>
+
+                {/* Total Late Fee / Jorimana Paid Badge */}
+                <div className={`px-3 py-1.5 rounded-lg border text-xs flex items-center gap-2 ${
+                  totalFinePaid > 0
+                    ? 'bg-amber-100/90 border-amber-300 text-amber-950 font-mono shadow-2xs'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                }`}>
+                  <span className="font-sans font-medium text-[11px]">
+                    {language === 'bn' ? 'পরিশোধিত মোট জরিমানা:' : 'Total Late Fee / Jorimana Paid:'}
+                  </span>
+                  <strong className="font-bold text-sm">
+                    {formatCurrency(totalFinePaid, language)}
+                  </strong>
+                  {totalFinePaid > 0 ? (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 font-bold font-sans">
+                      ⚠️ জরিমানা
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-semibold font-sans">
+                      ✓ {language === 'bn' ? 'জরিমানা নেই (০৳)' : 'No Fine (৳ 0)'}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {memberTxs.length === 0 ? (
@@ -265,42 +343,67 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                         <th className="py-2.5 px-3">{language === 'bn' ? 'তারিখ' : 'Date'}</th>
                         <th className="py-2.5 px-3">{language === 'bn' ? 'খাত / ধরন' : 'Type'}</th>
                         <th className="py-2.5 px-3">{language === 'bn' ? 'মাধ্যম' : 'Method'}</th>
-                        <th className="py-2.5 px-3 text-right">{language === 'bn' ? 'পরিমাণ' : 'Amount'}</th>
+                        <th className="py-2.5 px-3 text-right">{language === 'bn' ? 'জরিমানা / লেট ফি' : 'Late Fee'}</th>
+                        <th className="py-2.5 px-3 text-right">{language === 'bn' ? 'মোট পরিমাণ' : 'Total Amount'}</th>
                         <th className="py-2.5 px-3 no-print text-center">{language === 'bn' ? 'রসিদ' : 'Action'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200">
-                      {memberTxs.map((tx) => (
-                        <tr key={tx.id} className="hover:bg-neutral-50/80 transition-colors">
-                          <td className="py-2.5 px-3 font-mono font-medium text-neutral-900">{tx.receiptNo}</td>
-                          <td className="py-2.5 px-3 text-neutral-600 font-mono">{formatDate(tx.date, language)}</td>
-                          <td className="py-2.5 px-3">
-                            <span className="capitalize font-medium text-neutral-800">
-                              {tx.type === 'savings'
-                                ? language === 'bn' ? 'সঞ্চয় কিস্তি' : 'Savings'
-                                : tx.type === 'loan_repayment'
-                                ? language === 'bn' ? 'ঋণের কিস্তি' : 'Loan Installment'
-                                : tx.type === 'project_share'
-                                ? language === 'bn' ? 'প্রকল্প চাঁদা' : 'Project Share'
-                                : language === 'bn' ? 'ভর্তি / অন্যান্য ফি' : 'Fee'}
-                            </span>
-                            {tx.remarks && <div className="text-[10px] text-neutral-400 truncate max-w-[140px]">{tx.remarks}</div>}
-                          </td>
-                          <td className="py-2.5 px-3 text-neutral-600 capitalize">{tx.paymentMethod}</td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold tabular-nums text-emerald-700">
-                            {formatCurrency(tx.amount, language)}
-                          </td>
-                          <td className="py-2.5 px-3 text-center no-print">
-                            <button
-                              onClick={() => onOpenReceipt(tx)}
-                              className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>{language === 'bn' ? 'রসিদ' : 'View'}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {memberTxs.map((tx) => {
+                        const fine = tx.fineAmount || (tx.type === 'fine_fee' ? tx.amount : 0);
+                        return (
+                          <tr key={tx.id} className="hover:bg-neutral-50/80 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-medium text-neutral-900">{tx.receiptNo}</td>
+                            <td className="py-2.5 px-3 text-neutral-600 font-mono">{formatDate(tx.date, language)}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="capitalize font-medium text-neutral-800">
+                                {tx.type === 'savings'
+                                  ? language === 'bn' ? 'সঞ্চয় কিস্তি' : 'Savings'
+                                  : tx.type === 'loan_repayment'
+                                  ? language === 'bn' ? 'ঋণের কিস্তি' : 'Loan Installment'
+                                  : tx.type === 'project_share'
+                                  ? language === 'bn' ? 'প্রকল্প চাঁদা' : 'Project Share'
+                                  : language === 'bn' ? 'ভর্তি / জরিমানা ফি' : 'Fee'}
+                              </span>
+                              {tx.remarks && <div className="text-[10px] text-neutral-400 truncate max-w-[140px]">{tx.remarks}</div>}
+                            </td>
+                            <td className="py-2.5 px-3 text-neutral-600 capitalize">{tx.paymentMethod}</td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                              {fine > 0 ? (
+                                <span className="text-[11px] font-bold text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                                  {formatCurrency(fine, language)}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400 text-[11px]">-</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold tabular-nums text-emerald-700">
+                              {formatCurrency(tx.amount, language)}
+                            </td>
+                            <td className="py-2.5 px-3 text-center no-print">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {isCashier && onOpenEditTx && (
+                                  <button
+                                    onClick={() => onOpenEditTx(tx)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer"
+                                    title={language === 'bn' ? 'সংশোধন / এডিট' : 'Edit'}
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>{language === 'bn' ? 'এডিট' : 'Edit'}</span>
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => onOpenReceipt(tx)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>{language === 'bn' ? 'রসিদ' : 'View'}</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

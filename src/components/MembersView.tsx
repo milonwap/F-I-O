@@ -101,12 +101,9 @@ export const MembersView: React.FC<MembersViewProps> = ({
     }
   };
 
-  const totalMonthlyCommitment = members.reduce((sum, m) => sum + m.monthlySavingsCommitment, 0);
-  const totalSavingsVault = members.reduce((sum, m) => sum + (m.totalSavingsDeposited || 0), 0);
-
   return (
     <div className="space-y-6">
-      {/* Top Banner & Summary */}
+      {/* Top Banner */}
       <div className="bg-white border border-neutral-200 rounded-xl p-5 sm:p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -133,38 +130,6 @@ export const MembersView: React.FC<MembersViewProps> = ({
               <UserPlus className="w-4 h-4" />
               <span>{language === 'bn' ? '+ নতুন সদস্য নিবন্ধন' : '+ Add New Member'}</span>
             </button>
-          </div>
-        </div>
-
-        {/* 3 Metric counters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-4 border-t border-neutral-100">
-          <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
-            <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
-              {language === 'bn' ? 'মোট মাসিক কিস্তি লক্ষ্যমাত্রা' : 'Monthly Savings Target'}
-            </div>
-            <div className="text-lg font-bold font-mono tabular-nums text-neutral-900 mt-0.5">
-              {formatCurrency(totalMonthlyCommitment, language)}
-            </div>
-          </div>
-
-          <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
-            <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
-              {language === 'bn' ? 'সদস্যদের মোট জমাকৃত সঞ্চয়' : 'Total Deposited Savings'}
-            </div>
-            <div className="text-lg font-bold font-mono tabular-nums text-emerald-700 mt-0.5">
-              {formatCurrency(totalSavingsVault, language)}
-            </div>
-          </div>
-
-          <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
-            <div className="text-[11px] font-medium text-neutral-500 uppercase tracking-wide">
-              {language === 'bn' ? 'মোট সংরক্ষিত শেয়ার সংখ্যা' : 'Total Shares Owned'}
-            </div>
-            <div className="text-lg font-bold font-mono tabular-nums text-neutral-900 mt-0.5">
-              {language === 'bn'
-                ? `${toBengaliNumber(members.reduce((sum, m) => sum + m.shareCount, 0))} টি`
-                : `${members.reduce((sum, m) => sum + m.shareCount, 0)} Shares`}
-            </div>
           </div>
         </div>
       </div>
@@ -228,7 +193,16 @@ export const MembersView: React.FC<MembersViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredMembers.map((member) => {
             const roleBadge = getRoleBadge(member.role);
-            const memberTxCount = transactions.filter((t) => t.memberId === member.id).length;
+            const memberTxs = transactions.filter((t) => t.memberId === member.id);
+            const memberTxCount = memberTxs.length;
+            const memberFinePaid = Math.max(
+              Number((member as any)?.total_fine_paid ?? (member as any)?.totalFinePaid ?? 0),
+              memberTxs.reduce((sum, tx) => {
+                const fField = Number(tx.fineAmount || 0);
+                const fType = tx.type === 'fine_fee' ? Number(tx.amount || 0) : 0;
+                return sum + Math.max(fField, fType);
+              }, 0)
+            );
 
             return (
               <div
@@ -272,7 +246,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
                   </div>
 
                   {/* Financial Metrics Strip */}
-                  <div className="grid grid-cols-2 gap-2 text-xs bg-neutral-50 p-3 rounded-lg border border-neutral-150 mb-4">
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-neutral-50 p-3 rounded-lg border border-neutral-150 mb-3">
                     <div>
                       <span className="text-neutral-500 text-[11px] block">
                         {language === 'bn' ? 'মোট সঞ্চয় জমা' : 'Savings Balance'}
@@ -304,6 +278,31 @@ export const MembersView: React.FC<MembersViewProps> = ({
                       <span className="text-neutral-800 font-mono font-medium">
                         {language === 'bn' ? `${toBengaliNumber(memberTxCount)} বার` : `${memberTxCount} Times`}
                       </span>
+                    </div>
+                  </div>
+
+                  {/* Late Fee Status Badge */}
+                  <div className={`flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg border mb-4 ${
+                    memberFinePaid > 0
+                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 font-mono'
+                      : 'bg-neutral-50 border-neutral-200 text-neutral-600'
+                  }`}>
+                    <span className="text-[11px] font-sans font-medium">
+                      {language === 'bn' ? 'পরিশোধিত জরিমানা / লেট ফি:' : 'Total Late Fee Paid:'}
+                    </span>
+                    <div className="flex items-center gap-1.5 font-mono">
+                      {memberFinePaid > 0 ? (
+                        <>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-bold font-sans">
+                            ⚠️ লেট ফি
+                          </span>
+                          <strong className="font-bold text-amber-950">{formatCurrency(memberFinePaid, language)}</strong>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-sans">
+                          ✓ {language === 'bn' ? '০৳ (জরিমানা নেই)' : '৳ 0 (No Fine)'}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -382,12 +381,23 @@ export const MembersView: React.FC<MembersViewProps> = ({
                   <th className="py-3 px-4">{language === 'bn' ? 'শেয়ার' : 'Shares'}</th>
                   <th className="py-3 px-4">{language === 'bn' ? 'ধার্য কিস্তি' : 'Monthly Target'}</th>
                   <th className="py-3 px-4 text-right">{language === 'bn' ? 'মোট সঞ্চয়' : 'Total Savings'}</th>
+                  <th className="py-3 px-4 text-right">{language === 'bn' ? 'জরিমানা' : 'Late Fee'}</th>
                   <th className="py-3 px-4 text-center">{language === 'bn' ? 'অ্যাকশন' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200">
                 {filteredMembers.map((member) => {
                   const roleBadge = getRoleBadge(member.role);
+                  const memberTxs = transactions.filter((t) => t.memberId === member.id);
+                  const memberFinePaid = Math.max(
+                    Number((member as any)?.total_fine_paid ?? (member as any)?.totalFinePaid ?? 0),
+                    memberTxs.reduce((sum, tx) => {
+                      const fField = Number(tx.fineAmount || 0);
+                      const fType = tx.type === 'fine_fee' ? Number(tx.amount || 0) : 0;
+                      return sum + Math.max(fField, fType);
+                    }, 0)
+                  );
+
                   return (
                     <tr key={member.id} className="hover:bg-neutral-50/80 transition-colors">
                       <td className="py-3 px-4 font-mono font-bold text-neutral-800">{member.memberNo}</td>
@@ -414,6 +424,17 @@ export const MembersView: React.FC<MembersViewProps> = ({
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold tabular-nums text-emerald-700">
                         {formatCurrency(member.totalSavingsDeposited, language)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono tabular-nums">
+                        {memberFinePaid > 0 ? (
+                          <span className="text-[11px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                            {formatCurrency(memberFinePaid, language)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-sans">
+                            {language === 'bn' ? '০৳' : '৳ 0'}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">

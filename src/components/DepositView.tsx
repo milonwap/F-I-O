@@ -12,9 +12,10 @@ import {
   Layers,
   X,
   Users,
+  Edit3,
 } from 'lucide-react';
 import { useSomiti } from '../context/SomitiContext';
-import { KistiTransaction } from '../types/somiti';
+import { KistiTransaction, isAdminRole } from '../types/somiti';
 import { formatCurrency, toBengaliNumber, formatDate } from '../utils/formatters';
 import { DateInput } from './DateInput';
 
@@ -26,14 +27,16 @@ interface DepositViewProps {
     defaultAmount?: number
   ) => void;
   onOpenReceipt: (tx: KistiTransaction) => void;
+  onOpenEditTx?: (tx: KistiTransaction) => void;
 }
 
 export const DepositView: React.FC<DepositViewProps> = ({
   onOpenCollectModal,
   onOpenReceipt,
+  onOpenEditTx,
 }) => {
   const { members, transactions, language, collectKisti, currentMember } = useSomiti();
-  const isCashier = currentMember?.role === 'lead_executive' || currentMember?.role === 'cashier';
+  const isCashier = isAdminRole(currentMember?.role) || currentMember?.role === 'cashier';
 
   const [activeSubTab, setActiveSubTab] = useState<'sheet' | 'transactions'>('sheet');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => transactions[0]?.periodMonth || '2024-09');
@@ -326,21 +329,43 @@ export const DepositView: React.FC<DepositViewProps> = ({
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           {isCashier ? (
-                            <button
-                              onClick={() =>
-                                onOpenCollectModal(
-                                  row.member.id,
-                                  'savings',
-                                  selectedMonth,
-                                  row.dueSavings > 0 ? row.dueSavings : (row.targetSavings || 1000)
-                                )
-                              }
-                              className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-600 rounded transition-colors"
-                            >
-                              {row.isSavingsPaid
-                                ? language === 'bn' ? '+ অতিরিক্ত' : '+ Extra'
-                                : language === 'bn' ? 'জমা নিন' : 'Deposit'}
-                            </button>
+                            <>
+                              <button
+                                onClick={() =>
+                                  onOpenCollectModal(
+                                    row.member.id,
+                                    'savings',
+                                    selectedMonth,
+                                    row.dueSavings > 0 ? row.dueSavings : (row.targetSavings || 1000)
+                                  )
+                                }
+                                className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-600 rounded transition-colors cursor-pointer"
+                              >
+                                {row.isSavingsPaid
+                                  ? language === 'bn' ? '+ অতিরিক্ত' : '+ Extra'
+                                  : language === 'bn' ? 'জমা নিন' : 'Deposit'}
+                              </button>
+                              {row.recentTx && onOpenEditTx && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenEditTx(row.recentTx!)}
+                                  className="p-1 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer"
+                                  title={language === 'bn' ? 'সংশোধন / এডিট করুন' : 'Edit Transaction'}
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {row.recentTx && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenReceipt(row.recentTx!)}
+                                  className="p-1 text-neutral-400 hover:text-neutral-800 cursor-pointer"
+                                  title={language === 'bn' ? 'রসিদ দেখুন' : 'View Receipt'}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
                           ) : (
                             <span className="text-[10px] text-neutral-400">
                               {language === 'bn' ? 'ক্যাশিয়ার অনলি' : 'Cashier Only'}
@@ -435,12 +460,24 @@ export const DepositView: React.FC<DepositViewProps> = ({
                           {formatCurrency(total, language)}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => onOpenReceipt(tx)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 transition-colors cursor-pointer"
-                          >
-                            <span>{language === 'bn' ? 'রসিদ' : 'Receipt'}</span>
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            {onOpenEditTx && (
+                              <button
+                                onClick={() => onOpenEditTx(tx)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer"
+                                title={language === 'bn' ? 'সংশোধন / এডিট করুন' : 'Edit Transaction'}
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>{language === 'bn' ? 'এডিট' : 'Edit'}</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onOpenReceipt(tx)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 transition-colors cursor-pointer"
+                            >
+                              <span>{language === 'bn' ? 'রসিদ' : 'Receipt'}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

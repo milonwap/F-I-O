@@ -55,12 +55,14 @@ interface MyPortalViewProps {
   onOpenReceipt: (tx: KistiTransaction) => void;
   onOpenLoginModal: () => void;
   onBackToAdmin?: () => void;
+  onOpenEditTx?: (tx: KistiTransaction) => void;
 }
 
 export const MyPortalView: React.FC<MyPortalViewProps> = ({
   onOpenReceipt,
   onOpenLoginModal,
   onBackToAdmin,
+  onOpenEditTx,
 }) => {
   const {
     currentMember,
@@ -88,6 +90,8 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
   // When activePortalSubTab is null (or 'home'), the member sees the clean, minimal landing page.
   // When activePortalSubTab is set to any specific section, ONLY that section is rendered with a "← ব্যাক / মূল পেজ" button.
   const isSectionOpen = Boolean(activePortalSubTab);
+  const isAdmin = isAdminRole(currentMember?.role);
+  const isCashier = currentMember?.role === 'cashier' || isAdmin;
 
   const perms = currentMember?.permissions || {};
   const isProfileEnabled = (portalFeatureSettings?.profile ?? true) && (perms.canViewProfile ?? true);
@@ -204,6 +208,21 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
   const myTransactions = transactions
     .filter((tx) => tx.memberId === currentMember.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Total late fees / penalties paid by this member across all transactions & member record
+  const memberObjFine = Number((currentMember as any)?.total_fine_paid ?? (currentMember as any)?.totalFinePaid ?? 0);
+  const myTotalFinePaid = Math.max(
+    memberObjFine,
+    myTransactions.reduce((sum, tx) => {
+      const fineFromField = Number(tx.fineAmount || 0);
+      const fineFromType = tx.type === 'fine_fee' ? Number(tx.amount || 0) : 0;
+      return sum + Math.max(fineFromField, fineFromType);
+    }, 0)
+  );
+
+  const myFineInstallmentsCount = myTransactions.filter(
+    (tx) => (tx.fineAmount && tx.fineAmount > 0) || tx.type === 'fine_fee'
+  ).length;
 
   // Personal loan
   const myLoan = loans.find((l) => l.memberId === currentMember.id && l.status === 'active');
@@ -1162,13 +1181,26 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                             {tx.paymentMethod}
                           </td>
                           <td className="py-2.5 px-3 text-center font-sans">
-                            <button
-                              onClick={() => onOpenReceipt(tx)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-100 hover:bg-emerald-50 hover:text-emerald-800 text-neutral-700 rounded transition-colors text-[11px] cursor-pointer"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>রসিদ</span>
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              {(isAdmin || isCashier) && onOpenEditTx && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenEditTx(tx)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-300 transition-colors text-[11px] cursor-pointer"
+                                  title="সংশোধন / এডিট"
+                                >
+                                  <Edit3 className="w-3 h-3 text-amber-600" />
+                                  <span>এডিট</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => onOpenReceipt(tx)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-100 hover:bg-emerald-50 hover:text-emerald-800 text-neutral-700 rounded transition-colors text-[11px] cursor-pointer"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>রসিদ</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1228,9 +1260,17 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                   {language === 'bn' ? `আমার আর্থিক ড্যাশবোর্ড (${currentMember.nameBn})` : `My Financial Dashboard (${currentMember.nameEn})`}
                 </h2>
               </div>
-              <span className="text-xs px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-bold font-mono">
-                {language === 'bn' ? 'ব্যক্তিগত হিসাব' : 'Personal Account'}
-              </span>
+              <div className="flex items-center gap-2">
+                {myTotalFinePaid > 0 && (
+                  <span className="text-xs px-2.5 py-1 rounded bg-amber-100 border border-amber-300 text-amber-900 font-bold font-mono flex items-center gap-1 shadow-2xs">
+                    <span>⚠️ {language === 'bn' ? 'জরিমানা:' : 'Fine:'}</span>
+                    <strong>{formatCurrency(myTotalFinePaid, language)}</strong>
+                  </span>
+                )}
+                <span className="text-xs px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-bold font-mono">
+                  {language === 'bn' ? 'ব্যক্তিগত হিসাব' : 'Personal Account'}
+                </span>
+              </div>
             </div>
 
             {/* 5 Financial Stat Cards for this Member */}
@@ -1295,6 +1335,43 @@ export const MyPortalView: React.FC<MyPortalViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Conditional Member Late Fee / Penalty Alert Card: ONLY renders if myTotalFinePaid > 0 */}
+            {myTotalFinePaid > 0 && (
+              <div className="mt-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs animate-in fade-in duration-200">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0 text-amber-800 shadow-2xs">
+                    <AlertCircle className="w-5 h-5 text-amber-700" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                        {language === 'bn' ? 'পরিশোধিত লেট ফি / জরিমানা রেকর্ড' : 'Paid Late Fee / Penalty Record'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-200/90 text-amber-950 text-[10px] font-bold font-mono border border-amber-300">
+                        {language === 'bn'
+                          ? `${toBengaliNumber(myFineInstallmentsCount)} টি কিস্তিতে`
+                          : `${myFineInstallmentsCount} Overdue Installments`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-800/90 mt-0.5">
+                      {language === 'bn'
+                        ? 'বিলম্বিত কিস্তির কারণে আপনার নিকট থেকে এই জরিমানা গৃহীত হয়েছিল, যা সরাসরি সমিতির সংরক্ষিত ফান্ডে জমা রয়েছে।'
+                        : 'Collected for delayed kisti payments and credited to Somiti collective administrative reserves.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="sm:text-right shrink-0 bg-white/70 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border sm:border-0 border-amber-200">
+                  <div className="text-[10px] uppercase font-bold text-amber-800">
+                    {language === 'bn' ? 'মোট কর্তনকৃত জরিমানা' : 'Total Fine Deducted'}
+                  </div>
+                  <div className="text-xl font-black font-mono text-amber-950 mt-0.5">
+                    {formatCurrency(myTotalFinePaid, language)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Live Valuation Explanation Strip */}
             <div className="mt-4 p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 text-xs text-neutral-600 flex flex-wrap items-center justify-between gap-2">

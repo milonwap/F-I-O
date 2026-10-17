@@ -11,9 +11,10 @@ import {
   Check,
   TrendingUp,
   FileText,
+  Edit3,
 } from 'lucide-react';
 import { useSomiti } from '../context/SomitiContext';
-import { KistiTransaction, Loan, Member } from '../types/somiti';
+import { KistiTransaction, Loan, Member, isAdminRole } from '../types/somiti';
 import { formatCurrency, formatDate, toBengaliNumber } from '../utils/formatters';
 import { DateInput } from './DateInput';
 
@@ -25,13 +26,16 @@ interface KistiViewProps {
     defaultAmount?: number
   ) => void;
   onOpenReceipt: (tx: KistiTransaction) => void;
+  onOpenEditTx?: (tx: KistiTransaction) => void;
 }
 
 export const KistiView: React.FC<KistiViewProps> = ({
   onOpenCollectModal,
   onOpenReceipt,
+  onOpenEditTx,
 }) => {
-  const { members, transactions, loans, disburseLoan, language } = useSomiti();
+  const { members, transactions, loans, disburseLoan, language, currentMember } = useSomiti();
+  const isCashierOrAdmin = isAdminRole(currentMember?.role) || currentMember?.role === 'cashier' || currentMember?.role === 'lead_executive';
 
   const [activeSubTab, setActiveSubTab] = useState<'sheet' | 'transactions' | 'loans'>('sheet');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => transactions[0]?.periodMonth || '2024-09');
@@ -359,10 +363,20 @@ export const KistiView: React.FC<KistiViewProps> = ({
                               ১,০০০৳
                             </button>
                           )}
+                          {row.recentTx && isCashierOrAdmin && onOpenEditTx && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenEditTx(row.recentTx!)}
+                              className="p-1 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer"
+                              title={language === 'bn' ? 'সংশোধন / এডিট করুন' : 'Edit Transaction'}
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {row.recentTx && (
                             <button
                               onClick={() => onOpenReceipt(row.recentTx!)}
-                              className="p-1 text-neutral-400 hover:text-neutral-800"
+                              className="p-1 text-neutral-400 hover:text-neutral-800 cursor-pointer"
                               title={language === 'bn' ? 'রসিদ দেখুন' : 'View Receipt'}
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
@@ -460,13 +474,25 @@ export const KistiView: React.FC<KistiViewProps> = ({
                           {formatCurrency(total, language)}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => onOpenReceipt(tx)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            <span>{language === 'bn' ? 'রসিদ' : 'Receipt'}</span>
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            {isCashierOrAdmin && onOpenEditTx && (
+                              <button
+                                onClick={() => onOpenEditTx(tx)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 transition-colors cursor-pointer"
+                                title={language === 'bn' ? 'কিস্তি সংশোধন / এডিট করুন' : 'Edit Kisti Collection'}
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>{language === 'bn' ? 'এডিট' : 'Edit'}</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onOpenReceipt(tx)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>{language === 'bn' ? 'রসিদ' : 'Receipt'}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

@@ -9,6 +9,8 @@ import {
   DocumentReference,
   Unsubscribe,
   getDocFromServer,
+  runTransaction,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, Auth } from 'firebase/auth';
 
@@ -252,3 +254,183 @@ export async function verifyFirebaseConnection(): Promise<{
     };
   }
 }
+
+export interface EditKistiTransactionParams {
+  transactionId: string;
+  memberId: string;
+  oldKistiAmount: number;
+  newKistiAmount: number;
+  oldFineAmount: number;
+  newFineAmount: number;
+  newDate: string;
+  newTargetMonth: string;
+  correctionReason?: string;
+  editorName?: string;
+}
+
+/**
+ * Safely edit a kisti transaction using Firebase runTransaction:
+ * - Recalculates difference for member total_deposited & total_fine_paid
+ * - Updates global stats: total_deposit, total_fine, cash_in_hand, total_asset, per_share_value
+ * - Updates member current_equity_value based on 100 shares model
+ * - Atomically syncs the central somiti_data/central_database document and standalone collections
+ */
+export const handleEditKistiTransaction = async ({
+  transactionId,
+  memberId,
+  oldKistiAmount,
+  newKistiAmount,
+  oldFineAmount,
+  newFineAmount,
+  newDate,
+  newTargetMonth,
+  correctionReason = '',
+  editorName = 'Cashier',
+}: EditKistiTransactionParams): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await ensureFirebaseAuth();
+    const globalRef = doc(db, 'samity_summary', 'global_stats');
+    const memberRef = doc(db, 'members', memberId);
+    const txRef = doc(db, 'transactions', transactionId);
+
+    // Difference calculations
+    const kistiDiff = Number(newKistiAmount) - Number(oldKistiAmount);
+    const fineDiff = Number(newFineAmount) - Number(oldFineAmount);
+    const totalCashDiff = kistiDiff + fineDiff;
+    const newTotalPaid = Number(newKistiAmount) + Number(newFineAmount);
+
+    await runTransaction(db, async (transaction) => {
+      const centralSnap = await transaction.get(centralDocRef);
+      const globalDoc = await transaction.get(globalRef);
+      const memberDoc = await transaction.get(memberRef);
+
+      const gData = globalDoc.exists() ? (globalDoc.data() || {}) : {};
+      const mData = memberDoc.exists() ? (memberDoc.data() || {}) : {};
+
+      // 1. Global Stats update
+      const updatedTotalDeposit = Math.max(0, (Number(gData.total_deposit) || 0) + kistiDiff);
+      const updatedTotalFine = Math.max(0, (Number(gData.total_fine) || 0) + fineDiff);
+      const updatedCashInHand = Math.max(0, (Number(gData.cash_in_hand) || 0) + totalCashDiff);
+      const updatedTotalAsset = updatedTotalDeposit + (Number(gData.total_profit) || 0) + updatedTotalFine;
+      const updatedPerShareValue = updatedTotalAsset / 100;
+
+      // 2. Member Stats update
+      const updatedMemberDeposit = Math.max(0, (Number(mData.total_deposited) || 0) + kistiDiff);
+      const updatedMemberFine = Math.max(0, (Number(mData.total_fine_paid) || 0) + fineDiff);
+      const totalMembers = Number(gData.total_members) || 8;
+      const memberShares = 100 / (totalMembers || 1);
+      const updatedMemberEquity = memberShares * updatedPerShareValue;
+
+      // 1. Update Global Stats Doc in Firestore
+      transaction.set(globalRef, {
+        total_deposit: updatedTotalDeposit,
+        total_fine: updatedTotalFine,
+        cash_in_hand: updatedCashInHand,
+        total_asset: updatedTotalAsset,
+        per_share_value: updatedPerShareValue,
+        updated_at: serverTimestamp(),
+        last_edited_by: editorName,
+      }, { merge: true });
+
+      // 2. Update Member Doc in Firestore
+      transaction.set(memberRef, {
+        total_deposited: updatedMemberDeposit,
+        total_fine_paid: updatedMemberFine,
+        current_equity_value: updatedMemberEquity,
+        updated_at: serverTimestamp(),
+        last_edited_by: editorName,
+      }, { merge: true });
+
+      // 3. Update Transaction Record Doc in Firestore
+      transaction.set(txRef, {
+        amount: newTotalPaid,
+        principalAmount: Number(newKistiAmount),
+        fineAmount: Number(newFineAmount),
+        fine: Number(newFineAmount),
+        date: newDate,
+        target_month: newTargetMonth,
+        targetMonth: newTargetMonth,
+        is_edited: true,
+        correction_reason: correctionReason || null,
+        last_edited_at: serverTimestamp(),
+        edited_by: editorName,
+      }, { merge: true });
+
+      // 4. Update Central somiti_data/central_database Document
+      if (centralSnap.exists()) {
+        const bundle = centralSnap.data();
+        const txs: any[] = Array.isArray(bundle.transactions) ? bundle.transactions : [];
+        const mems: any[] = Array.isArray(bundle.members) ? bundle.members : [];
+        const cbook: any[] = Array.isArray(bundle.cashbook) ? bundle.cashbook : [];
+
+        const updatedTxs = txs.map((t) => {
+          if (t.id === transactionId) {
+            return {
+              ...t,
+              amount: newTotalPaid,
+              principalAmount: Number(newKistiAmount),
+              fineAmount: Number(newFineAmount),
+              totalPaid: newTotalPaid,
+              date: newDate,
+              actualPaymentDate: newDate,
+              targetMonth: newTargetMonth,
+              periodMonth: newTargetMonth,
+              remarks: t.remarks
+                ? (correctionReason ? `${t.remarks} [সংশোধিত: ${correctionReason}]` : `${t.remarks} [সংশোধিত]`)
+                : (correctionReason ? `[সংশোধিত: ${correctionReason}]` : '[সংশোধিত]'),
+              isEdited: true,
+              is_edited: true,
+              correctionReason: correctionReason || null,
+              lastEditedAt: new Date().toISOString(),
+              editedBy: editorName,
+            };
+          }
+          return t;
+        });
+
+        const updatedMems = mems.map((m) => {
+          if (m.id === memberId) {
+            const newSavings = Math.max(0, (m.totalSavingsDeposited || 0) + kistiDiff);
+            const newFine = Math.max(0, (m.total_fine_paid || 0) + fineDiff);
+            return {
+              ...m,
+              totalSavingsDeposited: newSavings,
+              total_deposited: newSavings,
+              total_fine_paid: newFine,
+              current_equity_value: updatedMemberEquity,
+            };
+          }
+          return m;
+        });
+
+        const updatedCashbook = cbook.map((cb) => {
+          if (cb.relatedMemberId === memberId && (cb.notes?.includes(transactionId) || (cb.category === 'kisti_collection' && cb.date === newDate))) {
+            return {
+              ...cb,
+              amount: Math.max(0, Number(cb.amount || 0) + totalCashDiff),
+              date: newDate,
+              notes: `${cb.notes || ''} [সংশোধিত]`,
+            };
+          }
+          return cb;
+        });
+
+        transaction.set(centralDocRef, cleanPayload({
+          ...bundle,
+          transactions: updatedTxs,
+          members: updatedMems,
+          cashbook: updatedCashbook,
+          version: (bundle.version || 0) + 1,
+          updatedAt: new Date().toISOString(),
+          updatedBy: editorName,
+        }), { merge: true });
+      }
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Firebase runTransaction error in handleEditKistiTransaction:', err);
+    handleFirestoreError(err, OperationType.UPDATE, `transactions/${transactionId}`);
+    return { success: false, error: err?.message || 'Transaction update failed' };
+  }
+};

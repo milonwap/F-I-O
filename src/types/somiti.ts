@@ -79,6 +79,9 @@ export interface Member {
   notes?: string;
   password?: string;
   permissions?: MemberPermissions;
+  total_deposited?: number;
+  total_fine_paid?: number;
+  current_equity_value?: number;
 }
 
 export interface KistiTransaction {
@@ -102,6 +105,12 @@ export interface KistiTransaction {
   loanId?: string;
   actualPaymentDate?: string;
   isFineWaived?: boolean;
+  isEdited?: boolean;
+  is_edited?: boolean;
+  correctionReason?: string;
+  lastEditedAt?: string;
+  last_edited_at?: any;
+  editedBy?: string;
 }
 
 export interface CashbookEntry {

@@ -13,6 +13,7 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { CollectKistiModal } from './components/CollectKistiModal';
 import { MemberProfileModal } from './components/MemberProfileModal';
 import { AddEditMemberModal } from './components/AddEditMemberModal';
+import { EditKistiModal } from './components/EditKistiModal';
 import { LoginModal } from './components/LoginModal';
 import { RulesView } from './components/RulesView';
 import { SettingsView } from './components/SettingsView';
@@ -48,6 +49,7 @@ const SomitiApp: React.FC = () => {
   const [collectTargetAmount, setCollectTargetAmount] = useState<number | undefined>(undefined);
 
   const [receiptTx, setReceiptTx] = useState<KistiTransaction | null>(null);
+  const [editingTx, setEditingTx] = useState<KistiTransaction | null>(null);
 
   const [profileMember, setProfileMember] = useState<Member | null>(null);
 
@@ -57,6 +59,10 @@ const SomitiApp: React.FC = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   // Handlers
+  const handleOpenEditTx = (tx: KistiTransaction) => {
+    setEditingTx(tx);
+  };
+
   const handleOpenCollectModal = (
     memberId?: string,
     type?: any,
@@ -212,6 +218,7 @@ const SomitiApp: React.FC = () => {
             onOpenReceipt={(tx) => setReceiptTx(tx)}
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
             onBackToAdmin={() => setActiveTab('dashboard')}
+            onOpenEditTx={handleOpenEditTx}
           />
         )}
 
@@ -228,6 +235,7 @@ const SomitiApp: React.FC = () => {
           <DepositView
             onOpenCollectModal={handleOpenCollectModal}
             onOpenReceipt={(tx) => setReceiptTx(tx)}
+            onOpenEditTx={handleOpenEditTx}
           />
         )}
 
@@ -238,7 +246,12 @@ const SomitiApp: React.FC = () => {
           />
         )}
 
-        {isAdmin && currentTab === 'cashier' && <CashierView />}
+        {isAdmin && currentTab === 'cashier' && (
+          <CashierView
+            onOpenEditTx={handleOpenEditTx}
+            onOpenReceipt={(tx) => setReceiptTx(tx)}
+          />
+        )}
 
         {isAdmin && currentTab === 'projects_tasks' && <ProjectsAndTasksView />}
 
@@ -260,19 +273,21 @@ const SomitiApp: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="no-print border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 py-6 text-center text-xs text-neutral-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div>
-            © 2026 Friend Initiative Organization · Reg: FIO-7412/2021
+      {/* Footer (Hidden on Admin Dashboard to prevent duplicate footer) */}
+      {currentTab !== 'dashboard' && (
+        <footer className="no-print border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 py-6 text-center text-xs text-neutral-500">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div>
+              © 2026 Friend Initiative Organization · Reg: FIO-7412/2021
+            </div>
+            <div className="text-neutral-500">
+              <span className="font-semibold text-emerald-800">
+                {language === 'bn' ? '📍 সিতাইকুন্ড, কোটালীপাড়া, গোপালগঞ্জ' : '📍 Sitaikunda, Kotalipara, Gopalgonj'}
+              </span>
+            </div>
           </div>
-          <div className="text-neutral-500">
-            <span className="font-semibold text-emerald-800">
-              {language === 'bn' ? '📍 সিতাইকুন্ড, কোটালীপাড়া, গোপালগঞ্জ' : '📍 Sitaikunda, Kotalipara, Gopalgonj'}
-            </span>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* MODALS */}
       {/* 1. Money Receipt Modal */}
@@ -310,6 +325,7 @@ const SomitiApp: React.FC = () => {
         onEditMember={(member) => {
           handleOpenEditMember(member);
         }}
+        onOpenEditTx={handleOpenEditTx}
       />
 
       {/* 4. Add/Edit Member Modal */}
@@ -328,6 +344,13 @@ const SomitiApp: React.FC = () => {
         onSuccess={() => {
           setActiveTab('my_portal');
         }}
+      />
+
+      {/* 6. Edit Kisti Transaction Modal */}
+      <EditKistiModal
+        transaction={editingTx}
+        isOpen={!!editingTx}
+        onClose={() => setEditingTx(null)}
       />
 
       {/* 6. Floating Cloud Save Error Notification Toast */}
